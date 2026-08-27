@@ -1,4 +1,4 @@
-name: OCI Auto Instance Creator (Official OCI CLI)
+name: OCI Auto Instance Creator
 
 on:
   schedule:
@@ -10,30 +10,54 @@ jobs:
   create-oci-instance:
     runs-on: ubuntu-latest
     steps:
-      - name: Setup OCI CLI
-        uses: oracle-actions/setup-oci-cli@v1.3.2
-        with:
-          user: ${{ secrets.OCI_USER_ID }}
-          tenancy: ${{ secrets.OCI_TENANCY_ID }}
-          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          region: ${{ secrets.OCI_REGION }}
-          api_key: ${{ secrets.OCI_KEY_CONTENT }}
-
-      - name: Create OCI Instance
+      - name: Install OCI CLI
         run: |
-          echo "OCI 인스턴스 생성을 시도합니다..."
-          
-          # SSH public key를 임시 파일로 저장
-          echo "${{ secrets.SSH_KEY }}" > ssh_key.pub
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+          # OCI CLI 자동 설치
+          bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
+          echo "/home/runner/bin" >> $GITHUB_PATH
 
-          # OCI CLI 인스턴스 생성 명령 실행
-          oci compute instance launch \
-            --compartment-id "${{ secrets.OCI_TENANCY_ID }}" \
-            --availability-domain "${{ secrets.OCI_AVAILABILITY_DOMAIN }}" \
+      - name: Configure OCI CLI & Launch Instance
+        env:
+          OCI_USER_ID: ${{ secrets.OCI_USER_ID }}
+          OCI_TENANCY_ID: ${{ secrets.OCI_TENANCY_ID }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_KEY_CONTENT: ${{ secrets.OCI_KEY_CONTENT }}
+          OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
+          OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_ID }}
+          OCI_AVAILABILITY_DOMAIN: ${{ secrets.OCI_AVAILABILITY_DOMAIN }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          # 1. OCI 설정 디렉토리 및 키 파일 생성
+          mkdir -p ~/.oci
+          echo "$OCI_KEY_CONTENT" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+
+          # 2. OCI 설정파일(config) 작성
+          cat <<EOF > ~/.oci/config
+          [DEFAULT]
+          user=$OCI_USER_ID
+          fingerprint=$OCI_FINGERPRINT
+          key_file=~/.oci/oci_api_key.pem
+          tenancy=$OCI_TENANCY_ID
+          region=$OCI_REGION
+          EOF
+
+          # 3. SSH public key 파일 생성
+          echo "$SSH_KEY" > ssh_key.pub
+
+          echo "OCI 인스턴스 생성을 시도합니다..."
+
+          # 4. OCI CLI로 인스턴스 생성 명령어 실행
+          /home/runner/bin/oci compute instance launch \
+            --compartment-id "$OCI_TENANCY_ID" \
+            --availability-domain "$OCI_AVAILABILITY_DOMAIN" \
             --shape "VM.Standard.A1.Flex" \
             --shape-config '{"ocpus": 4, "memory_in_gbs": 24}' \
-            --subnet-id "${{ secrets.OCI_SUBNET_ID }}" \
-            --image-id "${{ secrets.OCI_IMAGE_ID }}" \
+            --subnet-id "$OCI_SUBNET_ID" \
+            --image-id "$OCI_IMAGE_ID" \
             --assign-public-ip true \
             --ssh-authorized-keys-file ssh_key.pub \
             --display-name "Auto-Created-A1-Flex"
