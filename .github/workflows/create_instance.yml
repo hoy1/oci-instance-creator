@@ -47,13 +47,13 @@ jobs:
           # 3. SSH public key 파일 생성
           echo "$SSH_KEY" > ssh_key.pub
 
-          # 4. 내 리전에 맞는 최신 Ubuntu 22.04 ARM 이미지 ID 자동 검색
-          echo "Ubuntu 22.04 ARM 이미지 ID를 검색합니다..."
+          # 4. 내 리전에 맞는 최신 Ubuntu 24.04 ARM 이미지 ID 자동 검색
+          echo "Ubuntu 24.04 ARM 이미지 ID를 검색합니다..."
           IMAGE_ID=$(/home/runner/bin/oci compute image list \
             --compartment-id "$OCI_TENANCY_ID" \
             --shape "VM.Standard.A1.Flex" \
             --operating-system "Canonical Ubuntu" \
-            --operating-system-version "22.04" \
+            --operating-system-version "24.04" \
             --sort-by TIMECREATED \
             --sort-order DESC \
             --query "data[0].id" \
