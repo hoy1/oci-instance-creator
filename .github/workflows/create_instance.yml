@@ -2,7 +2,6 @@ name: OCI Auto Instance Creator
 
 on:
   schedule:
-    # GitHub Cron 지연을 고려해 15분 간격으로 지정
     - cron: '*/15 * * * *'
   workflow_dispatch:
 
@@ -27,7 +26,8 @@ jobs:
           OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
           OCI_AVAILABILITY_DOMAIN: ${{ secrets.OCI_AVAILABILITY_DOMAIN }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
-          OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: True
+          OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+          SUPPRESS_LABEL_WARNING: "True"
         run: |
           mkdir -p ~/.oci
           echo "$OCI_KEY_CONTENT" > ~/.oci/oci_api_key.pem
@@ -42,6 +42,7 @@ jobs:
           region=$OCI_REGION
           EOF
 
+          chmod 600 ~/.oci/config
           echo "$SSH_KEY" > ssh_key.pub
 
           IMAGE_ID=$(/home/runner/bin/oci compute image list \
@@ -56,10 +57,11 @@ jobs:
 
           echo "검색된 Image ID: $IMAGE_ID"
 
-          # 30초 간격으로 최대 10번 재시도하는 내부 루프 (GitHub Cron 지연 극복)
+          # 30초 간격으로 최대 10번 재시도
           for i in {1..10}; do
             echo "==== [$i/10] OCI 인스턴스 생성 시도 중... ===="
             
+            set +e
             OUTPUT=$(/home/runner/bin/oci compute instance launch \
               --compartment-id "$OCI_TENANCY_ID" \
               --availability-domain "$OCI_AVAILABILITY_DOMAIN" \
@@ -70,11 +72,11 @@ jobs:
               --assign-public-ip true \
               --ssh-authorized-keys-file ssh_key.pub \
               --display-name "Auto-Created-A1-Flex" 2>&1)
-            
+            set -e
+
             echo "$OUTPUT"
 
-            # 성공했을 경우 종료
-            if echo "$OUTPUT" | grep -q '"lifecycle-state": "PROVISIONING"'; then
+            if echo "$OUTPUT" | grep -q "PROVISIONING"; then
               echo "🎉 인스턴스 생성 성공!"
               exit 0
             fi
