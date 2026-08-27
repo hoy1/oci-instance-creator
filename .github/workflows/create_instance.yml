@@ -2,9 +2,9 @@ name: OCI Auto Instance Creator
 
 on:
   schedule:
-    # 10분마다 자동으로 생성을 시도합니다.
-    - cron: '*/10 * * * *'
-  workflow_dispatch: # 수동 실행 버튼 활성화
+    # GitHub Cron 지연을 고려해 15분 간격으로 지정
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
 
 jobs:
   create-oci-instance:
@@ -17,7 +17,7 @@ jobs:
           bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
           echo "/home/runner/bin" >> $GITHUB_PATH
 
-      - name: Configure OCI CLI & Launch Instance
+      - name: Configure OCI CLI & Launch Instance with Retries
         env:
           OCI_USER_ID: ${{ secrets.OCI_USER_ID }}
           OCI_TENANCY_ID: ${{ secrets.OCI_TENANCY_ID }}
@@ -29,12 +29,10 @@ jobs:
           SSH_KEY: ${{ secrets.SSH_KEY }}
           OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: True
         run: |
-          # 1. OCI 설정 디렉토리 및 키 파일 생성
           mkdir -p ~/.oci
           echo "$OCI_KEY_CONTENT" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
 
-          # 2. OCI 설정파일(config) 작성
           cat <<EOF > ~/.oci/config
           [DEFAULT]
           user=$OCI_USER_ID
@@ -44,11 +42,8 @@ jobs:
           region=$OCI_REGION
           EOF
 
-          # 3. SSH public key 파일 생성
           echo "$SSH_KEY" > ssh_key.pub
 
-          # 4. 내 리전에 맞는 최신 Ubuntu 24.04 ARM 이미지 ID 자동 검색
-          echo "Ubuntu 24.04 ARM 이미지 ID를 검색합니다..."
           IMAGE_ID=$(/home/runner/bin/oci compute image list \
             --compartment-id "$OCI_TENANCY_ID" \
             --shape "VM.Standard.A1.Flex" \
@@ -61,18 +56,31 @@ jobs:
 
           echo "검색된 Image ID: $IMAGE_ID"
 
-          echo "OCI 인스턴스 생성을 시도합니다..."
+          # 30초 간격으로 최대 10번 재시도하는 내부 루프 (GitHub Cron 지연 극복)
+          for i in {1..10}; do
+            echo "==== [$i/10] OCI 인스턴스 생성 시도 중... ===="
+            
+            OUTPUT=$(/home/runner/bin/oci compute instance launch \
+              --compartment-id "$OCI_TENANCY_ID" \
+              --availability-domain "$OCI_AVAILABILITY_DOMAIN" \
+              --shape "VM.Standard.A1.Flex" \
+              --shape-config '{"ocpus": 4, "memory_in_gbs": 24}' \
+              --subnet-id "$OCI_SUBNET_ID" \
+              --image-id "$IMAGE_ID" \
+              --assign-public-ip true \
+              --ssh-authorized-keys-file ssh_key.pub \
+              --display-name "Auto-Created-A1-Flex" 2>&1)
+            
+            echo "$OUTPUT"
 
-          # 5. OCI CLI로 인스턴스 생성 명령어 실행
-          /home/runner/bin/oci compute instance launch \
-            --compartment-id "$OCI_TENANCY_ID" \
-            --availability-domain "$OCI_AVAILABILITY_DOMAIN" \
-            --shape "VM.Standard.A1.Flex" \
-            --shape-config '{"ocpus": 4, "memory_in_gbs": 24}' \
-            --subnet-id "$OCI_SUBNET_ID" \
-            --image-id "$IMAGE_ID" \
-            --assign-public-ip true \
-            --ssh-authorized-keys-file ssh_key.pub \
-            --display-name "Auto-Created-A1-Flex"
+            # 성공했을 경우 종료
+            if echo "$OUTPUT" | grep -q '"lifecycle-state": "PROVISIONING"'; then
+              echo "🎉 인스턴스 생성 성공!"
+              exit 0
+            fi
 
-          echo "인스턴스 생성 성공!"
+            echo "재고 부족 또는 대기 중... 30초 후 재시도합니다."
+            sleep 30
+          done
+
+          exit 1
