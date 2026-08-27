@@ -14,7 +14,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y jq curl
-          # OCI CLI 자동 설치
           bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
           echo "/home/runner/bin" >> $GITHUB_PATH
 
@@ -26,9 +25,9 @@ jobs:
           OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
           OCI_KEY_CONTENT: ${{ secrets.OCI_KEY_CONTENT }}
           OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
-          OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_ID }}
           OCI_AVAILABILITY_DOMAIN: ${{ secrets.OCI_AVAILABILITY_DOMAIN }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
+          OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: True
         run: |
           # 1. OCI 설정 디렉토리 및 키 파일 생성
           mkdir -p ~/.oci
@@ -48,16 +47,30 @@ jobs:
           # 3. SSH public key 파일 생성
           echo "$SSH_KEY" > ssh_key.pub
 
+          # 4. 내 리전에 맞는 최신 Ubuntu 22.04 ARM 이미지 ID 자동 검색
+          echo "Ubuntu 22.04 ARM 이미지 ID를 검색합니다..."
+          IMAGE_ID=$(/home/runner/bin/oci compute image list \
+            --compartment-id "$OCI_TENANCY_ID" \
+            --shape "VM.Standard.A1.Flex" \
+            --operating-system "Canonical Ubuntu" \
+            --operating-system-version "22.04" \
+            --sort-by TIMECREATED \
+            --sort-order DESC \
+            --query "data[0].id" \
+            --raw-output)
+
+          echo "검색된 Image ID: $IMAGE_ID"
+
           echo "OCI 인스턴스 생성을 시도합니다..."
 
-          # 4. OCI CLI로 인스턴스 생성 명령어 실행
+          # 5. OCI CLI로 인스턴스 생성 명령어 실행
           /home/runner/bin/oci compute instance launch \
             --compartment-id "$OCI_TENANCY_ID" \
             --availability-domain "$OCI_AVAILABILITY_DOMAIN" \
             --shape "VM.Standard.A1.Flex" \
             --shape-config '{"ocpus": 4, "memory_in_gbs": 24}' \
             --subnet-id "$OCI_SUBNET_ID" \
-            --image-id "$OCI_IMAGE_ID" \
+            --image-id "$IMAGE_ID" \
             --assign-public-ip true \
             --ssh-authorized-keys-file ssh_key.pub \
             --display-name "Auto-Created-A1-Flex"
