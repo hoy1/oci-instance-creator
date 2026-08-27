@@ -2,9 +2,9 @@ name: OCI Auto Instance Creator
 
 on:
   schedule:
-    # 10분마다 자동으로 생성을 시도합니다.
+    # 10분마다 자동으로 인스턴스 생성을 시도합니다.
     - cron: '*/10 * * * *'
-  workflow_dispatch: # 수동으로 즉시 실행하는 버튼 활성화
+  workflow_dispatch: # 수동 실행 버튼 활성화
 
 jobs:
   run-oci-creator:
@@ -17,12 +17,12 @@ jobs:
           OCI_TENANCY_ID: ${{ secrets.OCI_TENANCY_ID }}
           OCI_REGION: ${{ secrets.OCI_REGION }}
           OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_KEY_CONTENT: ${{ secrets.OCI_KEY_CONTENT }}
+          OCI_KEY_CONTENT: |
+            ${{ secrets.OCI_KEY_CONTENT }}
           OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
           OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_ID }}
           OCI_AVAILABILITY_DOMAIN: ${{ secrets.OCI_AVAILABILITY_DOMAIN }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
-          # 희망하는 스펙 (무료 최대 한도: 4코어 / 24GB)
           CPUS: 4
           RAM: 24
           SHAPE: VM.Standard.A1.Flex
