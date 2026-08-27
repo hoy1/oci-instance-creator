@@ -1,28 +1,41 @@
-name: OCI Auto Instance Creator
+name: OCI Auto Instance Creator (Official OCI CLI)
 
 on:
   schedule:
-    # 10분마다 자동으로 인스턴스 생성을 시도합니다.
+    # 10분마다 자동으로 생성을 시도합니다.
     - cron: '*/10 * * * *'
   workflow_dispatch: # 수동 실행 버튼 활성화
 
 jobs:
-  run-oci-creator:
+  create-oci-instance:
     runs-on: ubuntu-latest
     steps:
-      - name: Run OCI Instance Creator
-        uses: mowirth/oci-instance-creator@master
-        env:
-          OCI_USER_ID: ${{ secrets.OCI_USER_ID }}
-          OCI_TENANCY_ID: ${{ secrets.OCI_TENANCY_ID }}
-          OCI_REGION: ${{ secrets.OCI_REGION }}
-          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_KEY_CONTENT: |
-            ${{ secrets.OCI_KEY_CONTENT }}
-          OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
-          OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_ID }}
-          OCI_AVAILABILITY_DOMAIN: ${{ secrets.OCI_AVAILABILITY_DOMAIN }}
-          SSH_KEY: ${{ secrets.SSH_KEY }}
-          CPUS: 4
-          RAM: 24
-          SHAPE: VM.Standard.A1.Flex
+      - name: Setup OCI CLI
+        uses: oracle-actions/setup-oci-cli@v1.3.2
+        with:
+          user: ${{ secrets.OCI_USER_ID }}
+          tenancy: ${{ secrets.OCI_TENANCY_ID }}
+          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          region: ${{ secrets.OCI_REGION }}
+          api_key: ${{ secrets.OCI_KEY_CONTENT }}
+
+      - name: Create OCI Instance
+        run: |
+          echo "OCI 인스턴스 생성을 시도합니다..."
+          
+          # SSH public key를 임시 파일로 저장
+          echo "${{ secrets.SSH_KEY }}" > ssh_key.pub
+
+          # OCI CLI 인스턴스 생성 명령 실행
+          oci compute instance launch \
+            --compartment-id "${{ secrets.OCI_TENANCY_ID }}" \
+            --availability-domain "${{ secrets.OCI_AVAILABILITY_DOMAIN }}" \
+            --shape "VM.Standard.A1.Flex" \
+            --shape-config '{"ocpus": 4, "memory_in_gbs": 24}' \
+            --subnet-id "${{ secrets.OCI_SUBNET_ID }}" \
+            --image-id "${{ secrets.OCI_IMAGE_ID }}" \
+            --assign-public-ip true \
+            --ssh-authorized-keys-file ssh_key.pub \
+            --display-name "Auto-Created-A1-Flex"
+
+          echo "인스턴스 생성 성공!"
