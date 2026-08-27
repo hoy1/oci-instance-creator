@@ -2,9 +2,9 @@ name: OCI Auto Instance Creator
 
 on:
   schedule:
-    # GitHub Cron 지연 고려 및 안전한 간격 (15분마다 실행)
+    # 15분마다 자동 실행
     - cron: '*/15 * * * *'
-  workflow_dispatch: # 수동 실행 버튼 활성화
+  workflow_dispatch: # 수동 실행 버튼
 
 jobs:
   create-oci-instance:
@@ -30,7 +30,6 @@ jobs:
           OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
           SUPPRESS_LABEL_WARNING: "True"
         run: |
-          # 1. OCI 인증 설정
           mkdir -p ~/.oci
           echo "$OCI_KEY_CONTENT" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
@@ -47,7 +46,6 @@ jobs:
           chmod 600 ~/.oci/config
           echo "$SSH_KEY" > ssh_key.pub
 
-          # 2. 내 리전에 맞는 최신 Ubuntu 24.04 ARM 이미지 ID 자동 검색
           IMAGE_ID=$(/home/runner/bin/oci compute image list \
             --compartment-id "$OCI_TENANCY_ID" \
             --shape "VM.Standard.A1.Flex" \
@@ -60,7 +58,6 @@ jobs:
 
           echo "검색된 Image ID: $IMAGE_ID"
 
-          # 3. 429 차단 방지를 위한 150초(2분 30초) 간격 루프 (총 4회 시도)
           for i in {1..4}; do
             echo "==== [$i/4] OCI 인스턴스 생성 시도 중... ===="
             
@@ -79,17 +76,17 @@ jobs:
 
             echo "$OUTPUT"
 
-            # 생성 성공 시 성공 메시지 출력 후 종료
             if echo "$OUTPUT" | grep -q "PROVISIONING"; then
               echo "🎉 인스턴스 생성 성공!"
               exit 0
             fi
 
-            # 마지막 회차가 아닌 경우 대기
             if [ $i -lt 4 ]; then
-              echo "재고 부족... API 차단 방지를 위해 150초 대기 후 재시도합니다."
+              echo "재고 부족... 150초 대기 후 재시도합니다."
               sleep 150
             fi
           done
 
-          exit 1
+          echo "이번 회차 시도 종료 (재고 없음). 다음 스케줄을 기다립니다."
+          # exit 1 대신 exit 0을 써서 GitHub가 스케줄을 멈추지 않게 함
+          exit 0
